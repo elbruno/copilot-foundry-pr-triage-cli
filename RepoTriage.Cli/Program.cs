@@ -9,6 +9,7 @@ using Spectre.Console;
 string? diffPath = null;
 string? prUrl = null;
 bool mock = false;
+int timeoutSeconds = 300;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -20,6 +21,10 @@ for (int i = 0; i < args.Length; i++)
         case "--pr" when i + 1 < args.Length:
             prUrl = args[++i];
             break;
+        case "--timeout" when i + 1 < args.Length:
+            if (int.TryParse(args[++i], out var t) && t > 0)
+                timeoutSeconds = t;
+            break;
         case "--mock":
             mock = true;
             break;
@@ -28,8 +33,8 @@ for (int i = 0; i < args.Length; i++)
 
 if (diffPath is null && prUrl is null)
 {
-    AnsiConsole.MarkupLine("[red]Usage:[/] dotnet run -- --diff <path> [[--mock]]");
-    AnsiConsole.MarkupLine("       dotnet run -- --pr <github-pr-url> [[--mock]]");
+    AnsiConsole.MarkupLine("[red]Usage:[/] dotnet run -- --diff <path> [[--timeout <seconds>]] [[--mock]]");
+    AnsiConsole.MarkupLine("       dotnet run -- --pr <github-pr-url> [[--timeout <seconds>]] [[--mock]]");
     return 1;
 }
 
@@ -47,7 +52,7 @@ PullRequestInput input;
 var token = config["GITHUB_TOKEN"];
 
 using var copilotAgent = new CopilotAgentClient(token, mock);
-using var foundryAgent = new FoundryAgentClient(config, mock);
+using var foundryAgent = new FoundryAgentClient(config, mock, timeoutSeconds);
 
 AnsiConsole.MarkupLine($"[dim]Foundry Local endpoint:[/] {Markup.Escape(foundryAgent.Endpoint)}");
 AnsiConsole.MarkupLine($"[dim]Foundry Local model:[/] {Markup.Escape(foundryAgent.Model)}");

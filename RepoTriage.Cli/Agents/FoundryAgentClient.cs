@@ -24,10 +24,10 @@ public sealed class FoundryAgentClient : IFoundryAgentClient, IDisposable
     /// <summary>The model name/alias being used.</summary>
     public string Model { get; }
 
-    public FoundryAgentClient(IConfiguration config, bool mock = false)
+    public FoundryAgentClient(IConfiguration config, bool mock = false, int timeoutSeconds = 300)
     {
         _mock = mock;
-        _http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
         Endpoint = config["FOUNDRY_LOCAL_ENDPOINT"]
