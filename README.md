@@ -1,11 +1,11 @@
 # 🔍 Repo Triage Agent — Console TUI
 
-A **.NET 10 (C#)** console application using **Spectre.Console** that demonstrates a **Repo Triage Agent** powered by:
+A **.NET 10 (C#)** console application using **Spectre.Console** that demonstrates a **Repo Triage Agent** powered by the [Microsoft Agent Framework](https://learn.microsoft.com/en-us/agent-framework/):
 
-- **🤖 Copilot Agent** — GitHub/PR context operations (REST-based, with Copilot SDK placeholder)
-- **🧠 Foundry Local Agent** — Local LLM for summarization, risk detection, and checklist generation
+- **🤖 GitHub Copilot Agent** — PR context fetching and comment drafting using [`Microsoft.Agents.AI.GitHub.Copilot`](https://learn.microsoft.com/en-us/agent-framework/user-guide/agents/agent-types/github-copilot-agent?pivots=programming-language-csharp)
+- **🧠 Foundry Local Agent** — Summarization, risk analysis, and checklist generation using [`ChatClientAgent`](https://learn.microsoft.com/en-us/agent-framework/user-guide/agents/agent-types/chat-client-agent?pivots=programming-language-csharp) with [`IChatClient`](https://learn.microsoft.com/en-us/dotnet/ai/conceptual/abstractions)
 
-The console UI clearly shows **which agent is working at each step**, making it ideal for **5–10 minute live demos**.
+The console UI clearly shows **which agent is working at each step**, making it ideal for **5–10 minute live demos** and **learning the Microsoft Agent Framework**.
 
 ---
 
@@ -76,10 +76,10 @@ This shows the dynamically assigned port (e.g., `http://127.0.0.1:52620/`). The 
 
 ```bash
 # With mock data (no LLM required)
-dotnet run --project src/RepoTriage.Cli -- --diff docs/sample.diff.patch --mock
+dotnet run --project RepoTriage.Cli -- --diff docs/sample.diff.patch --mock
 
 # With Foundry Local running
-dotnet run --project src/RepoTriage.Cli -- --diff docs/sample.diff.patch
+dotnet run --project RepoTriage.Cli -- --diff docs/sample.diff.patch
 ```
 
 ### GitHub PR Mode
@@ -89,13 +89,13 @@ dotnet run --project src/RepoTriage.Cli -- --diff docs/sample.diff.patch
 export GITHUB_TOKEN=ghp_your_token_here
 
 # Set your GitHub token (option 2: .NET user secrets — stored securely, not in source)
-dotnet user-secrets set "GITHUB_TOKEN" "ghp_your_token_here" --project src/RepoTriage.Cli
+dotnet user-secrets set "GITHUB_TOKEN" "ghp_your_token_here" --project RepoTriage.Cli
 
 # Triage a pull request
-dotnet run --project src/RepoTriage.Cli -- --pr https://github.com/OWNER/REPO/pull/123
+dotnet run --project RepoTriage.Cli -- --pr https://github.com/OWNER/REPO/pull/123
 
 # Mock mode (no token or LLM needed)
-dotnet run --project src/RepoTriage.Cli -- --pr https://github.com/OWNER/REPO/pull/123 --mock
+dotnet run --project RepoTriage.Cli -- --pr https://github.com/OWNER/REPO/pull/123 --mock
 ```
 
 ---
@@ -112,13 +112,13 @@ dotnet run --project src/RepoTriage.Cli -- --pr https://github.com/OWNER/REPO/pu
 >
 > ```bash
 > # GitHub token
-> dotnet user-secrets set "GITHUB_TOKEN" "ghp_your_token_here" --project src/RepoTriage.Cli
+> dotnet user-secrets set "GITHUB_TOKEN" "ghp_your_token_here" --project RepoTriage.Cli
 >
 > # Foundry Local endpoint (check current port with: foundry service status)
-> dotnet user-secrets set "FOUNDRY_LOCAL_ENDPOINT" "http://127.0.0.1:52620/v1/chat/completions" --project src/RepoTriage.Cli
+> dotnet user-secrets set "FOUNDRY_LOCAL_ENDPOINT" "http://127.0.0.1:52620/v1/chat/completions" --project RepoTriage.Cli
 >
 > # Foundry Local model (use full model ID from: foundry model list)
-> dotnet user-secrets set "FOUNDRY_LOCAL_MODEL" "Phi-4-trtrtx-gpu:1" --project src/RepoTriage.Cli
+> dotnet user-secrets set "FOUNDRY_LOCAL_MODEL" "Phi-4-trtrtx-gpu:1" --project RepoTriage.Cli
 > ```
 >
 > The app checks both environment variables and user secrets automatically (user secrets take precedence).
@@ -160,25 +160,46 @@ After completion, the tool renders four sections:
 
 ---
 
+## Architecture Overview
+
+This application demonstrates a **two-agent architecture** using the Microsoft Agent Framework:
+
+### Agent Roles
+
+| Agent | Framework Pattern | Responsibilities |
+|-------|-------------------|------------------|
+| **GitHub Copilot Agent** | [`CopilotClient.AsAIAgent()`](https://learn.microsoft.com/en-us/agent-framework/user-guide/agents/agent-types/github-copilot-agent?pivots=programming-language-csharp) | • Fetch PR context from GitHub<br>• Retrieve diff content<br>• Draft formatted PR review comments |
+| **Foundry Local Agent** | [`ChatClientAgent`](https://learn.microsoft.com/en-us/agent-framework/user-guide/agents/agent-types/chat-client-agent?pivots=programming-language-csharp) with [`IChatClient`](https://learn.microsoft.com/en-us/dotnet/ai/conceptual/abstractions) | • Summarize code changes<br>• Identify risks (security, performance, breaking changes)<br>• Generate review checklist items |
+
+### Why This Pattern?
+
+- **`IChatClient` abstraction** enables swappable LLM backends (Foundry Local, Azure OpenAI, OpenAI, etc.) without code changes
+- **`AIAgent.RunAsync()`** provides structured request/response patterns with streaming support
+- **Tool/function calling** allows the GitHub Copilot Agent to invoke specific operations (fetch PR, get diff, format comment)
+- **Session management** enables multi-turn conversations with context retention
+
+📖 **Learn more:** See [`docs/architecture.md`](docs/architecture.md) for sequence diagrams and data flow details.
+
+---
+
 ## Project Structure
 
 ```
-src/
-  RepoTriage.Cli/
-    Program.cs                          # Minimal entry point (~80 lines)
-    Workflow/
-      TriageWorkflow.cs                 # Orchestration logic
-      Steps.cs                          # Step definitions
-    Agents/
-      ICopilotAgentClient.cs            # Copilot Agent interface
-      IFoundryAgentClient.cs            # Foundry Agent interface
-      CopilotAgentClient.cs             # REST-based GitHub implementation
-      FoundryAgentClient.cs             # Foundry Local LLM implementation
-    Ui/
-      ConsoleUi.cs                      # Spectre.Console rendering helpers
-    Models/
-      PullRequestInput.cs               # Input model
-      TriageResult.cs                   # Output model
+RepoTriage.Cli/
+  Program.cs                          # Entry point with DI configuration
+  Workflow/
+    TriageWorkflow.cs                 # Orchestration logic for 5-step workflow
+    Steps.cs                          # Step definitions
+  Agents/
+    ICopilotAgentClient.cs            # Copilot Agent interface
+    IFoundryAgentClient.cs            # Foundry Agent interface
+    CopilotAgentClient.cs             # GitHub Copilot Agent implementation
+    FoundryAgentClient.cs             # Foundry Local Agent (ChatClientAgent)
+  Ui/
+    ConsoleUi.cs                      # Spectre.Console rendering helpers
+  Models/
+    PullRequestInput.cs               # Input model
+    TriageResult.cs                   # Output model
 ```
 
 ---
@@ -187,7 +208,7 @@ src/
 
 <!-- TODO: Add screenshots or GIF of a demo run -->
 
-_Run `dotnet run --project src/RepoTriage.Cli -- --diff docs/sample.diff.patch --mock` to see the demo output._
+_Run `dotnet run --project RepoTriage.Cli -- --diff docs/sample.diff.patch --mock` to see the demo output._
 
 ---
 
@@ -201,7 +222,38 @@ _Run `dotnet run --project src/RepoTriage.Cli -- --diff docs/sample.diff.patch -
 
 ---
 
+## Learning Path
+
+This repository serves as an **educational example** of the Microsoft Agent Framework. It demonstrates:
+
+1. **Multi-agent orchestration** — Coordinating specialized agents for a complex workflow
+2. **IChatClient abstraction** — Using provider-agnostic interfaces for LLM backends
+3. **Streaming responses** — Displaying agent output token-by-token for better UX
+4. **Tool/function calling** — Enabling agents to invoke specific operations
+5. **Console UI integration** — Building interactive TUI applications with Spectre.Console
+
+### Learning Modules
+
+For step-by-step guides on implementing these patterns:
+
+- 📘 [`docs/learning/01-ichatclient-basics.md`](docs/learning/01-ichatclient-basics.md) — Microsoft.Extensions.AI fundamentals
+- 📗 [`docs/learning/02-aiagent-patterns.md`](docs/learning/02-aiagent-patterns.md) — ChatClientAgent and GitHubCopilotAgent patterns
+- 📙 [`docs/learning/03-multi-agent-orchestration.md`](docs/learning/03-multi-agent-orchestration.md) — How TriageWorkflow coordinates agents
+
+### Getting Started Guide
+
+New to this project? Check out [`docs/getting-started.md`](docs/getting-started.md) for:
+- Prerequisites installation (Foundry Local, GitHub Copilot CLI)
+- Authentication setup
+- Running your first end-to-end demo
+
+---
+
 ## References
 
+- [Microsoft Agent Framework Documentation](https://learn.microsoft.com/en-us/agent-framework/)
+- [GitHub Copilot Agents in C#](https://learn.microsoft.com/en-us/agent-framework/user-guide/agents/agent-types/github-copilot-agent?pivots=programming-language-csharp)
+- [Chat Client Agent Pattern](https://learn.microsoft.com/en-us/agent-framework/user-guide/agents/agent-types/chat-client-agent?pivots=programming-language-csharp)
+- [Building GitHub Copilot Agents with Microsoft Agent Framework](https://elbruno.com/2026/02/09/building-github-copilot-agents-in-c-with-microsoft-agent-framework/)
 - [Foundry Local](https://www.foundrylocal.ai/) — Local LLM inference
 - [GitHub REST API](https://docs.github.com/en/rest) — PR data retrieval

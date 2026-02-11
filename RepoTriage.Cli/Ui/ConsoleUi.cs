@@ -19,7 +19,7 @@ public static class ConsoleUi
 
     /// <summary>
     /// Runs the triage workflow inside a live Spectre.Console status display,
-    /// showing which agent is working at each step.
+    /// showing which agent is working at each step with streaming token display.
     /// </summary>
     public static async Task<TriageResult> RunWithProgressAsync(
         TriageWorkflow workflow, PullRequestInput input, CancellationToken ct)
@@ -46,6 +46,25 @@ public static class ConsoleUi
 
                 result = await workflow.RunAsync(input, progress, ct);
                 ctx.UpdateTarget(BuildTable(stepStates));
+            });
+
+        return result!;
+    }
+
+    /// <summary>
+    /// Runs the triage workflow with streaming token display for LLM responses.
+    /// Shows tokens as they arrive for a better UX during live demos.
+    /// </summary>
+    public static async Task<TriageResult> RunWithStreamingAsync(
+        TriageWorkflow workflow, PullRequestInput input, CancellationToken ct)
+    {
+        TriageResult? result = null;
+
+        await AnsiConsole.Status()
+            .StartAsync("[yellow]Running triage workflow...[/]", async ctx =>
+            {
+                var streamingProgress = new StreamingProgress(ctx);
+                result = await workflow.RunStreamingAsync(input, streamingProgress, ct);
             });
 
         return result!;
@@ -118,5 +137,37 @@ public static class ConsoleUi
             .Header("[bold red]❌ Error[/]")
             .Border(BoxBorder.Rounded)
             .Expand());
+    }
+}
+
+/// <summary>
+/// Progress reporter that displays streaming tokens as they arrive from LLM.
+/// </summary>
+public sealed class StreamingProgress
+{
+    private readonly StatusContext _statusContext;
+
+    public StreamingProgress(StatusContext statusContext)
+    {
+        _statusContext = statusContext;
+    }
+
+    /// <summary>Updates the status display with the current step.</summary>
+    public void ReportStep(TriageStep step, bool isComplete)
+    {
+        var status = isComplete ? "✅ Done" : "⏳ Working";
+        _statusContext.Status($"{step.Emoji} {step.Name}: {status}");
+    }
+
+    /// <summary>Displays a token chunk as it arrives from the LLM.</summary>
+    public void ReportToken(string token)
+    {
+        AnsiConsole.Markup(Markup.Escape(token));
+    }
+
+    /// <summary>Starts a new line for the next step.</summary>
+    public void ReportNewLine()
+    {
+        AnsiConsole.WriteLine();
     }
 }
