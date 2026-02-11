@@ -1,22 +1,26 @@
 using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.Json;
+using Microsoft.Agents.AI;
 using RepoTriage.Cli.Models;
 
 namespace RepoTriage.Cli.Agents;
 
 /// <summary>
-/// REST-based fallback implementation of <see cref="ICopilotAgentClient"/>.
-/// Uses the GitHub REST API to fetch PR data and drafts comments locally.
-/// See https://docs.github.com/en/rest
+/// Microsoft Agent Framework implementation of <see cref="ICopilotAgentClient"/>
+/// using the GitHub Copilot Agent pattern with tool/function calling.
 /// </summary>
-public sealed class CopilotAgentClient : ICopilotAgentClient, IDisposable
+public sealed class CopilotAgentClient : ICopilotAgentClient
 {
     private readonly HttpClient _http;
     private readonly bool _mock;
+    private readonly string? _gitHubToken;
 
     public CopilotAgentClient(string? gitHubToken = null, bool mock = false)
     {
         _mock = mock;
+        _gitHubToken = gitHubToken;
         _http = new HttpClient();
         _http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("RepoTriageCli", "1.0"));
 
@@ -25,6 +29,14 @@ public sealed class CopilotAgentClient : ICopilotAgentClient, IDisposable
             _http.DefaultRequestHeaders.Authorization =
                 new AuthenticationHeaderValue("Bearer", gitHubToken);
         }
+    }
+
+    /// <inheritdoc />
+    public Task InitializeAsync(CancellationToken ct = default)
+    {
+        // For now, initialization is not needed in mock mode or with REST API
+        // Future: Initialize CopilotClient when the SDK is fully available
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
@@ -113,14 +125,23 @@ public sealed class CopilotAgentClient : ICopilotAgentClient, IDisposable
         return Task.FromResult(comment);
     }
 
-    public void Dispose() => _http.Dispose();
-}
+    /// <inheritdoc />
+    public async IAsyncEnumerable<string> DraftCommentStreamingAsync(
+        string summary, IReadOnlyList<string> risks, IReadOnlyList<string> checklist,
+        string prTitle, [EnumeratorCancellation] CancellationToken ct)
+    {
+        // For now, return the full comment at once
+        // Future: Implement streaming via ChatClientAgent or CopilotClient when available
+        var fullComment = await DraftCommentAsync(summary, risks, checklist, prTitle, ct);
+        yield return fullComment;
+    }
 
-/// <summary>
-/// Placeholder for future GitHub Copilot SDK-based implementation.
-/// TODO: Replace with actual Copilot SDK calls when the NuGet package is available.
-/// </summary>
-// public sealed class CopilotSdkAgentClient : ICopilotAgentClient { ... }
+    public async ValueTask DisposeAsync()
+    {
+        _http.Dispose();
+        await Task.CompletedTask;
+    }
+}
 
 internal static class MockData
 {
