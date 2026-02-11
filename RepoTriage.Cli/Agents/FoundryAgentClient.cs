@@ -21,7 +21,6 @@ public sealed class FoundryAgentClient : IFoundryAgentClient
     private readonly string _endpoint;
     private readonly string _model;
     private IChatClient? _chatClient;
-    private AIAgent? _agent;
 
     /// <summary>The Foundry Local API endpoint being used.</summary>
     public string Endpoint { get; }
@@ -33,8 +32,8 @@ public sealed class FoundryAgentClient : IFoundryAgentClient
     {
         _mock = mock;
         
-        // Get endpoint
-        var configEndpoint = config["FOUNDRY_LOCAL_ENDPOINT"] ?? "http://localhost:5273/v1/chat/completions";
+        // Get endpoint - default is base URL without path
+        var configEndpoint = config["FOUNDRY_LOCAL_ENDPOINT"] ?? "http://localhost:5273";
         _endpoint = configEndpoint;
         _model = config["FOUNDRY_LOCAL_MODEL"] ?? "phi-4";
         
@@ -53,7 +52,6 @@ public sealed class FoundryAgentClient : IFoundryAgentClient
         }
 
         // Create IChatClient using OpenAI SDK for Foundry Local's OpenAI-compatible endpoint
-        // Parse the endpoint to extract base URL for OpenAI client
         var endpointUri = new Uri(_endpoint);
         var baseUrl = $"{endpointUri.Scheme}://{endpointUri.Host}:{endpointUri.Port}";
         
@@ -62,12 +60,23 @@ public sealed class FoundryAgentClient : IFoundryAgentClient
         
         _chatClient = openAiClient.GetChatClient(_model).AsIChatClient();
 
-        // Create a general-purpose agent
-        _agent = new ChatClientAgent(
-            _chatClient,
-            name: "FoundryLocalAgent");
-
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Creates a temporary ChatClientAgent with the given system prompt.
+    /// </summary>
+    private ChatClientAgent CreateTempAgent(string systemPrompt)
+    {
+        if (_chatClient == null)
+        {
+            throw new InvalidOperationException("Agent not initialized. Call InitializeAsync() first.");
+        }
+
+        return new ChatClientAgent(
+            _chatClient,
+            instructions: systemPrompt,
+            name: "FoundryTempAgent");
     }
 
     /// <inheritdoc />
@@ -78,17 +87,8 @@ public sealed class FoundryAgentClient : IFoundryAgentClient
             return GetMockResponse(systemPrompt);
         }
 
-        if (_agent == null)
-        {
-            throw new InvalidOperationException("Agent not initialized. Call InitializeAsync() first.");
-        }
-
         // Use the agent to complete the request with streaming and accumulate the response
-        // Create a temporary agent with the specific system prompt
-        var tempAgent = new ChatClientAgent(
-            _chatClient!,
-            instructions: systemPrompt,
-            name: "FoundryTempAgent");
+        var tempAgent = CreateTempAgent(systemPrompt);
 
         var responseBuilder = new System.Text.StringBuilder();
         await foreach (var update in tempAgent.RunStreamingAsync(userPrompt, cancellationToken: ct))
@@ -115,17 +115,8 @@ public sealed class FoundryAgentClient : IFoundryAgentClient
             yield break;
         }
 
-        if (_agent == null)
-        {
-            throw new InvalidOperationException("Agent not initialized. Call InitializeAsync() first.");
-        }
-
         // Use the agent for streaming completion
-        // Create a temporary agent with the specific system prompt
-        var tempAgent = new ChatClientAgent(
-            _chatClient!,
-            instructions: systemPrompt,
-            name: "FoundryTempAgent");
+        var tempAgent = CreateTempAgent(systemPrompt);
 
         await foreach (var update in tempAgent.RunStreamingAsync(userPrompt, cancellationToken: ct))
         {
