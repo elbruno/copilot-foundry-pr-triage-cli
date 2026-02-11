@@ -82,14 +82,4 @@ public static class StartupMenu
         // Default fallback
         return 300;
     }
-
-    /// <summary>
-    /// Checks if the --no-menu flag is present in the arguments.
-    /// </summary>
-    /// <param name="args">Command-line arguments.</param>
-    /// <returns>True if --no-menu flag is present, false otherwise.</returns>
-    public static bool HasNoMenuFlag(string[] args)
-    {
-        return args.Any(arg => arg.Equals("--no-menu", StringComparison.OrdinalIgnoreCase));
-    }
 }
