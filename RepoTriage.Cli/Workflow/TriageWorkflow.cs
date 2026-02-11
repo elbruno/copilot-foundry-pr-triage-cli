@@ -225,7 +225,7 @@ public sealed class TriageWorkflow
     /// Accumulates tokens into final result string.
     /// 
     /// EDUCATIONAL NOTE - Streaming Pattern:
-    /// IAsyncEnumerable&lt;string&gt; is the .NET pattern for async streaming:
+    /// IAsyncEnumerable<string> is the .NET pattern for async streaming:
     ///   - await foreach consumes items as they're produced
     ///   - WithCancellation() enables cancellation mid-stream
     ///   - StringBuilder accumulates for final result
