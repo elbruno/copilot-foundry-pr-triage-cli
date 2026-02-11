@@ -47,10 +47,11 @@ PullRequestInput input;
 var token = config["GITHUB_TOKEN"];
 
 await using var copilotAgent = new CopilotAgentClient(token, mock);
-using var foundryAgent = new FoundryAgentClient(config, mock);
+await using var foundryAgent = new FoundryAgentClient(config, mock);
 
-// Initialize the Copilot agent
+// Initialize both agents
 await copilotAgent.InitializeAsync(CancellationToken.None);
+await foundryAgent.InitializeAsync(CancellationToken.None);
 
 AnsiConsole.MarkupLine($"[dim]Foundry Local endpoint:[/] {Markup.Escape(foundryAgent.Endpoint)}");
 AnsiConsole.MarkupLine($"[dim]Foundry Local model:[/] {Markup.Escape(foundryAgent.Model)}");

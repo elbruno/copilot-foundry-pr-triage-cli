@@ -1,22 +1,27 @@
-using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
+using System.Runtime.CompilerServices;
+using Microsoft.Agents.AI;
+using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
+using OpenAI;
 
 namespace RepoTriage.Cli.Agents;
 
 /// <summary>
-/// Foundry Local Agent implementation that calls a local LLM endpoint.
+/// Foundry Local Agent implementation using Microsoft Agent Framework's ChatClientAgent.
+/// Uses IChatClient abstraction pointing to Foundry Local's OpenAI-compatible endpoint.
 /// See https://www.foundrylocal.ai/ for setup instructions.
 ///
 /// Configuration (env vars or user secrets):
-///   FOUNDRY_LOCAL_ENDPOINT — Base URL (default: http://localhost:5273/v1/chat/completions)
+///   FOUNDRY_LOCAL_ENDPOINT — Base URL (default: http://localhost:5273)
 ///   FOUNDRY_LOCAL_MODEL    — Model alias (default: phi-4)
 /// </summary>
-public sealed class FoundryAgentClient : IFoundryAgentClient, IDisposable
+public sealed class FoundryAgentClient : IFoundryAgentClient
 {
-    private readonly HttpClient _http;
     private readonly bool _mock;
+    private readonly string _endpoint;
+    private readonly string _model;
+    private IChatClient? _chatClient;
+    private AIAgent? _agent;
 
     /// <summary>The Foundry Local API endpoint being used.</summary>
     public string Endpoint { get; }
@@ -27,13 +32,42 @@ public sealed class FoundryAgentClient : IFoundryAgentClient, IDisposable
     public FoundryAgentClient(IConfiguration config, bool mock = false)
     {
         _mock = mock;
-        _http = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
-        _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        
+        // Get endpoint
+        var configEndpoint = config["FOUNDRY_LOCAL_ENDPOINT"] ?? "http://localhost:5273/v1/chat/completions";
+        _endpoint = configEndpoint;
+        _model = config["FOUNDRY_LOCAL_MODEL"] ?? "phi-4";
+        
+        // For display purposes
+        Endpoint = configEndpoint;
+        Model = _model;
+    }
 
-        Endpoint = config["FOUNDRY_LOCAL_ENDPOINT"]
-                   ?? "http://localhost:5273/v1/chat/completions";
-        Model = config["FOUNDRY_LOCAL_MODEL"]
-                ?? "phi-4";
+    /// <inheritdoc />
+    public Task InitializeAsync(CancellationToken ct = default)
+    {
+        if (_mock)
+        {
+            // In mock mode, we don't need the actual chat client
+            return Task.CompletedTask;
+        }
+
+        // Create IChatClient using OpenAI SDK for Foundry Local's OpenAI-compatible endpoint
+        // Parse the endpoint to extract base URL for OpenAI client
+        var endpointUri = new Uri(_endpoint);
+        var baseUrl = $"{endpointUri.Scheme}://{endpointUri.Host}:{endpointUri.Port}";
+        
+        var openAiClient = new OpenAIClient(new System.ClientModel.ApiKeyCredential("not-needed"), 
+            new OpenAIClientOptions { Endpoint = new Uri(baseUrl) });
+        
+        _chatClient = openAiClient.GetChatClient(_model).AsIChatClient();
+
+        // Create a general-purpose agent
+        _agent = new ChatClientAgent(
+            _chatClient,
+            name: "FoundryLocalAgent");
+
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
@@ -44,34 +78,62 @@ public sealed class FoundryAgentClient : IFoundryAgentClient, IDisposable
             return GetMockResponse(systemPrompt);
         }
 
-        // TODO: Adjust the request body to match the actual Foundry Local API schema
-        // if it differs from the OpenAI-compatible format.
-        var requestBody = new
+        if (_agent == null)
         {
-            model = Model,
-            messages = new object[]
+            throw new InvalidOperationException("Agent not initialized. Call InitializeAsync() first.");
+        }
+
+        // Use the agent to complete the request with streaming and accumulate the response
+        // Create a temporary agent with the specific system prompt
+        var tempAgent = new ChatClientAgent(
+            _chatClient!,
+            instructions: systemPrompt,
+            name: "FoundryTempAgent");
+
+        var responseBuilder = new System.Text.StringBuilder();
+        await foreach (var update in tempAgent.RunStreamingAsync(userPrompt, cancellationToken: ct))
+        {
+            if (!string.IsNullOrEmpty(update.Text))
             {
-                new { role = "system", content = systemPrompt },
-                new { role = "user", content = userPrompt }
-            },
-            max_tokens = 1024,
-            temperature = 0.3
-        };
+                responseBuilder.Append(update.Text);
+            }
+        }
+        
+        return responseBuilder.ToString();
+    }
 
-        var json = JsonSerializer.Serialize(requestBody);
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
-        var response = await _http.PostAsync(Endpoint, content, ct);
-        response.EnsureSuccessStatusCode();
+    /// <inheritdoc />
+    public async IAsyncEnumerable<string> CompleteStreamingAsync(
+        string systemPrompt, 
+        string userPrompt, 
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        if (_mock)
+        {
+            // In mock mode, return the full response at once
+            yield return GetMockResponse(systemPrompt);
+            yield break;
+        }
 
-        var responseJson = await response.Content.ReadAsStringAsync(ct);
-        using var doc = JsonDocument.Parse(responseJson);
+        if (_agent == null)
+        {
+            throw new InvalidOperationException("Agent not initialized. Call InitializeAsync() first.");
+        }
 
-        // OpenAI-compatible response: choices[0].message.content
-        return doc.RootElement
-            .GetProperty("choices")[0]
-            .GetProperty("message")
-            .GetProperty("content")
-            .GetString() ?? "";
+        // Use the agent for streaming completion
+        // Create a temporary agent with the specific system prompt
+        var tempAgent = new ChatClientAgent(
+            _chatClient!,
+            instructions: systemPrompt,
+            name: "FoundryTempAgent");
+
+        await foreach (var update in tempAgent.RunStreamingAsync(userPrompt, cancellationToken: ct))
+        {
+            if (!string.IsNullOrEmpty(update.Text))
+            {
+                yield return update.Text;
+            }
+        }
     }
 
     private static string GetMockResponse(string systemPrompt)
@@ -108,5 +170,9 @@ public sealed class FoundryAgentClient : IFoundryAgentClient, IDisposable
         return "No specific analysis available.";
     }
 
-    public void Dispose() => _http.Dispose();
+    public ValueTask DisposeAsync()
+    {
+        // IChatClient doesn't require disposal
+        return ValueTask.CompletedTask;
+    }
 }
