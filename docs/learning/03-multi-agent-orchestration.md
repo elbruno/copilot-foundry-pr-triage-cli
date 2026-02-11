@@ -251,10 +251,11 @@ private async Task<string> SummarizeWithRetryAsync(string diffContent)
 ### 2. Graceful Degradation
 
 ```csharp
-private async Task<string> IdentifyRisksWithRetryAsync(string diffContent)
+private async Task<string> IdentifyRisksWithFallbackAsync(string diffContent)
 {
     try
     {
+        // Call the actual retry method
         return await IdentifyRisksWithRetryAsync(diffContent);
     }
     catch (Exception ex)
