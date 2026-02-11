@@ -78,8 +78,14 @@ This shows the dynamically assigned port (e.g., `http://127.0.0.1:52620/`). The 
 # With mock data (no LLM required)
 dotnet run --project RepoTriage.Cli -- --diff docs/sample.diff.patch --mock
 
-# With Foundry Local running
+# With Foundry Local running (interactive menu for model/timeout selection)
 dotnet run --project RepoTriage.Cli -- --diff docs/sample.diff.patch
+
+# Use a faster model explicitly (skip interactive menu)
+dotnet run --project RepoTriage.Cli -- --diff docs/sample.diff.patch --model phi-3.5-mini
+
+# Use defaults without interactive menu (for automation/CI)
+dotnet run --project RepoTriage.Cli -- --diff docs/sample.diff.patch --no-menu
 ```
 
 ### GitHub PR Mode
@@ -131,7 +137,12 @@ dotnet run --project RepoTriage.Cli -- --pr https://github.com/OWNER/REPO/pull/1
 |---|---|
 | `--diff <path>` | Path to a `.patch` / `.diff` file |
 | `--pr <url>` | GitHub pull request URL |
+| `--timeout <seconds>` | HTTP timeout for LLM requests (default: 300) |
+| `--model <name>` | Foundry Local model to use (e.g., `phi-3.5-mini`, `phi-4`) |
+| `--no-menu` | Skip interactive model/timeout selection menu |
 | `--mock` | Use deterministic mock outputs (no LLM or GitHub API calls) |
+
+> **Interactive Menu:** When neither `--model` nor `--timeout` is specified (and `--no-menu` is not set), the tool displays an interactive menu to select the model and timeout. This makes it easy to choose faster models like `phi-3.5-mini` when `phi-4` is too slow.
 
 ---
 
