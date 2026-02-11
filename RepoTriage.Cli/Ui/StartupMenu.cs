@@ -45,6 +45,14 @@ public static class StartupMenu
         // Custom model - prompt for input
         AnsiConsole.WriteLine();
         var customModel = AnsiConsole.Ask<string>("[cyan]Enter custom model name:[/]");
+        
+        // Validate non-empty input
+        while (string.IsNullOrWhiteSpace(customModel))
+        {
+            AnsiConsole.MarkupLine("[red]Model name cannot be empty.[/]");
+            customModel = AnsiConsole.Ask<string>("[cyan]Enter custom model name:[/]");
+        }
+        
         return customModel;
     }
 
