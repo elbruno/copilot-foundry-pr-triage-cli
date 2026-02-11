@@ -14,6 +14,12 @@ public static class StartupMenu
     /// <returns>The selected model name/alias.</returns>
     public static string SelectModel()
     {
+        if (!AnsiConsole.Profile.Capabilities.Interactive)
+        {
+            AnsiConsole.MarkupLine("[yellow]⚠️  Non-interactive terminal detected. Using default model: phi-4[/]");
+            return "phi-4";
+        }
+
         AnsiConsole.WriteLine();
         var choice = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
@@ -48,6 +54,12 @@ public static class StartupMenu
     /// <returns>The selected timeout in seconds.</returns>
     public static int SelectTimeout()
     {
+        if (!AnsiConsole.Profile.Capabilities.Interactive)
+        {
+            AnsiConsole.MarkupLine("[yellow]⚠️  Non-interactive terminal detected. Using default timeout: 300 seconds[/]");
+            return 300;
+        }
+
         AnsiConsole.WriteLine();
         var choice = AnsiConsole.Prompt(
             new SelectionPrompt<string>()
