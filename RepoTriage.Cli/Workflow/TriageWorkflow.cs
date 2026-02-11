@@ -11,7 +11,15 @@ namespace RepoTriage.Cli.Workflow;
 /// Orchestrates the five-step triage workflow, delegating work to the
 /// Copilot Agent and Foundry Local Agent while reporting live progress.
 /// 
+/// EDUCATIONAL NOTE - Multi-Agent Orchestration:
+/// This workflow demonstrates key Agent Framework patterns:
+///   1. Separation of Concerns: GitHub ops (Copilot) vs AI analysis (Foundry)
+///   2. Sequential Pipeline: Each step feeds into the next
+///   3. Error Handling: Retry logic for network resilience
+///   4. Streaming: Real-time token display for better UX
+/// 
 /// Designed to be simple and easy to follow for 5-10 minute live demos.
+/// Each step is clearly labeled and uses descriptive variable names.
 /// </summary>
 public sealed class TriageWorkflow
 {
@@ -32,6 +40,11 @@ public sealed class TriageWorkflow
     /// <summary>
     /// Runs the full triage pipeline and returns the result.
     /// Simple, non-streaming version for easy demo comprehension.
+    /// 
+    /// EDUCATIONAL NOTE - Why AIAgent.RunAsync() vs raw HTTP calls:
+    ///   ✅ Agent: Structured prompts, session management, built-in retry
+    ///   ❌ HTTP: Manual JSON, no context, verbose error handling
+    /// The Agent Framework handles complexity so your code stays clean.
     /// </summary>
     public async Task<TriageResult> RunAsync(
         PullRequestInput input,
@@ -95,6 +108,14 @@ public sealed class TriageWorkflow
     /// <summary>
     /// Runs the workflow with streaming token display for LLM responses.
     /// Shows real-time progress for a better user experience during demos.
+    /// 
+    /// EDUCATIONAL NOTE - Streaming Benefits:
+    /// Streaming (RunStreamingAsync) provides immediate feedback:
+    ///   - Tokens appear as LLM generates them (better perceived performance)
+    ///   - Users see the "AI thinking" process
+    ///   - Essential for live demos to show real-time generation
+    ///   - Can cancel long-running operations mid-stream
+    /// Perfect for 5-10 minute live presentations!
     /// </summary>
     public async Task<TriageResult> RunStreamingAsync(
         PullRequestInput input,
@@ -169,6 +190,14 @@ public sealed class TriageWorkflow
     /// <summary>
     /// Simple retry logic with exponential backoff for LLM calls.
     /// Makes demos more reliable when network is flaky.
+    /// 
+    /// EDUCATIONAL NOTE - Why Retry Logic:
+    /// LLM calls can fail due to:
+    ///   - Network timeouts
+    ///   - Rate limiting
+    ///   - Service restarts
+    /// Exponential backoff (2s, 4s, 8s) gives the service time to recover
+    /// without hammering it with requests. Essential for production use.
     /// </summary>
     private async Task<T> RetryAsync<T>(Func<Task<T>> operation, string operationName, int maxRetries = 3, CancellationToken ct = default)
     {
@@ -194,6 +223,13 @@ public sealed class TriageWorkflow
     /// <summary>
     /// Consumes streaming tokens and displays them as they arrive.
     /// Accumulates tokens into final result string.
+    /// 
+    /// EDUCATIONAL NOTE - Streaming Pattern:
+    /// IAsyncEnumerable&lt;string&gt; is the .NET pattern for async streaming:
+    ///   - await foreach consumes items as they're produced
+    ///   - WithCancellation() enables cancellation mid-stream
+    ///   - StringBuilder accumulates for final result
+    /// This pattern works for any streaming data source, not just LLMs.
     /// </summary>
     private static async Task<string> StreamLLMResponseAsync(
         IAsyncEnumerable<string> stream,

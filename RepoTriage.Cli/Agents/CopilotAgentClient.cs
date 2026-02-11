@@ -10,12 +10,18 @@ namespace RepoTriage.Cli.Agents;
 /// <summary>
 /// Microsoft Agent Framework implementation of <see cref="ICopilotAgentClient"/>
 /// using the GitHub Copilot Agent pattern with tool/function calling.
+/// 
+/// EDUCATIONAL NOTE:
+/// This agent demonstrates the GitHub Copilot Agent pattern from Microsoft Agent Framework.
+/// In a full implementation, it would use CopilotClient.AsAIAgent() with AIFunction tools
+/// for GitHub operations. For now, it maintains REST API calls but provides the interface
+/// structure needed for easy migration to full CopilotClient integration.
 /// </summary>
 public sealed class CopilotAgentClient : ICopilotAgentClient
 {
     private readonly HttpClient _http;
     private readonly bool _mock;
-    // GitHubToken reserved for future CopilotClient authentication in Phase 4
+    // GitHubToken reserved for future CopilotClient authentication in full implementation
     private readonly string? _gitHubToken;
 
     public CopilotAgentClient(string? gitHubToken = null, bool mock = false)
@@ -35,8 +41,14 @@ public sealed class CopilotAgentClient : ICopilotAgentClient
     /// <inheritdoc />
     public Task InitializeAsync(CancellationToken ct = default)
     {
-        // For now, initialization is not needed in mock mode or with REST API
-        // Future: Initialize CopilotClient when the SDK is fully available
+        // EDUCATIONAL NOTE:
+        // InitializeAsync() is part of the Agent Framework pattern.
+        // In a full CopilotClient implementation, this would:
+        //   1. Create CopilotClient instance
+        //   2. Call StartAsync() to connect to Copilot CLI session
+        //   3. Define AIFunction tools (fetch PR, get diff, draft comment)
+        //   4. Create AIAgent via AsAIAgent() with tools and instructions
+        // For now, this is a no-op as we're using REST API directly.
         return Task.CompletedTask;
     }
 
@@ -131,6 +143,15 @@ public sealed class CopilotAgentClient : ICopilotAgentClient
         string summary, IReadOnlyList<string> risks, IReadOnlyList<string> checklist,
         string prTitle, [EnumeratorCancellation] CancellationToken ct)
     {
+        // EDUCATIONAL NOTE:
+        // IAsyncEnumerable<string> enables streaming responses token-by-token.
+        // This is the Agent Framework pattern for real-time UX during LLM generation.
+        // Benefits:
+        //   - Users see output immediately (better perceived performance)
+        //   - Can show progress indicators during generation
+        //   - Essential for live demos to show "AI thinking"
+        // In full CopilotClient implementation, this would use agent.RunStreamingAsync()
+        
         // For now, return the full comment at once
         // Future: Implement streaming via ChatClientAgent or CopilotClient when available
         var fullComment = await DraftCommentAsync(summary, risks, checklist, prTitle, ct);
@@ -139,6 +160,9 @@ public sealed class CopilotAgentClient : ICopilotAgentClient
 
     public ValueTask DisposeAsync()
     {
+        // EDUCATIONAL NOTE:
+        // IAsyncDisposable enables proper cleanup of async resources.
+        // For CopilotClient, this would call DisposeAsync() to close the CLI connection.
         _http.Dispose();
         return ValueTask.CompletedTask;
     }
@@ -146,21 +170,100 @@ public sealed class CopilotAgentClient : ICopilotAgentClient
 
 internal static class MockData
 {
+    // Mock data aligned with docs/sample.diff.patch for consistent demos
     public const string SampleDiff = """
         diff --git a/src/auth/login.cs b/src/auth/login.cs
         new file mode 100644
         --- /dev/null
         +++ b/src/auth/login.cs
-        @@ -0,0 +1,25 @@
+        @@ -0,0 +1,31 @@
+        +using System.Threading.Tasks;
+        +
+        +namespace MyApp.Auth;
+        +
         +public class LoginHandler
         +{
+        +    private readonly IUserRepository _userRepo;
+        +    private readonly IPasswordHasher _hasher;
+        +    private readonly ITokenService _tokenService;
+        +
+        +    public LoginHandler(IUserRepository userRepo, IPasswordHasher hasher, ITokenService tokenService)
+        +    {
+        +        _userRepo = userRepo;
+        +        _hasher = hasher;
+        +        _tokenService = tokenService;
+        +    }
+        +
         +    public async Task<AuthResult> HandleAsync(LoginRequest request)
         +    {
         +        var user = await _userRepo.FindByEmailAsync(request.Email);
-        +        if (user == null) return AuthResult.Fail("User not found");
+        +        if (user == null)
+        +            return AuthResult.Fail("User not found");
+        +
         +        var valid = _hasher.Verify(request.Password, user.PasswordHash);
-        +        if (!valid) return AuthResult.Fail("Invalid password");
-        +        return AuthResult.Ok(_tokenService.Generate(user));
+        +        if (!valid)
+        +            return AuthResult.Fail("Invalid password");
+        +
+        +        var token = _tokenService.Generate(user);
+        +        return AuthResult.Ok(token);
+        +    }
+        +}
+        diff --git a/src/auth/signup.cs b/src/auth/signup.cs
+        new file mode 100644
+        --- /dev/null
+        +++ b/src/auth/signup.cs
+        @@ -0,0 +1,28 @@
+        +using System.Threading.Tasks;
+        +
+        +namespace MyApp.Auth;
+        +
+        +public class SignupHandler
+        +{
+        +    private readonly IUserRepository _userRepo;
+        +    private readonly IPasswordHasher _hasher;
+        +
+        +    public SignupHandler(IUserRepository userRepo, IPasswordHasher hasher)
+        +    {
+        +        _userRepo = userRepo;
+        +        _hasher = hasher;
+        +    }
+        +
+        +    public async Task<SignupResult> HandleAsync(SignupRequest request)
+        +    {
+        +        var existing = await _userRepo.FindByEmailAsync(request.Email);
+        +        if (existing != null)
+        +            return SignupResult.Fail("Email already registered");
+        +
+        +        var hash = _hasher.Hash(request.Password);
+        +        var user = new User(request.Email, hash);
+        +        await _userRepo.SaveAsync(user);
+        +
+        +        return SignupResult.Ok(user.Id);
+        +    }
+        +}
+        diff --git a/tests/auth/loginTests.cs b/tests/auth/loginTests.cs
+        new file mode 100644
+        --- /dev/null
+        +++ b/tests/auth/loginTests.cs
+        @@ -0,0 +1,20 @@
+        +using Xunit;
+        +
+        +namespace MyApp.Auth.Tests;
+        +
+        +public class LoginTests
+        +{
+        +    [Fact]
+        +    public async Task ValidCredentials_ReturnsToken()
+        +    {
+        +        // Arrange
+        +        var handler = CreateHandler(existingUser: true, validPassword: true);
+        +
+        +        // Act
+        +        var result = await handler.HandleAsync(new LoginRequest("test@example.com", "pass123"));
+        +
+        +        // Assert
+        +        Assert.True(result.Success);
+        +        Assert.NotNull(result.Token);
         +    }
         +}
         """;
