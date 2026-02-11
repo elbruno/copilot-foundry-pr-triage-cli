@@ -1,0 +1,94 @@
+diff --git a/src/auth/login.cs b/src/auth/login.cs
+new file mode 100644
+--- /dev/null
++++ b/src/auth/login.cs
+@@ -0,0 +1,31 @@
++using System.Threading.Tasks;
++
++namespace MyApp.Auth;
++
++public class LoginHandler
++{
++    private readonly IUserRepository _userRepo;
++    private readonly IPasswordHasher _hasher;
++    private readonly ITokenService _tokenService;
++
++    public LoginHandler(IUserRepository userRepo, IPasswordHasher hasher, ITokenService tokenService)
++    {
++        _userRepo = userRepo;
++        _hasher = hasher;
++        _tokenService = tokenService;
++    }
++
++    public async Task<AuthResult> HandleAsync(LoginRequest request)
++    {
++        var user = await _userRepo.FindByEmailAsync(request.Email);
++        if (user == null)
++            return AuthResult.Fail("User not found");
++
++        var valid = _hasher.Verify(request.Password, user.PasswordHash);
++        if (!valid)
++            return AuthResult.Fail("Invalid password");
++
++        var token = _tokenService.Generate(user);
++        return AuthResult.Ok(token);
++    }
++}
+diff --git a/src/auth/signup.cs b/src/auth/signup.cs
+new file mode 100644
+--- /dev/null
++++ b/src/auth/signup.cs
+@@ -0,0 +1,28 @@
++using System.Threading.Tasks;
++
++namespace MyApp.Auth;
++
++public class SignupHandler
++{
++    private readonly IUserRepository _userRepo;
++    private readonly IPasswordHasher _hasher;
++
++    public SignupHandler(IUserRepository userRepo, IPasswordHasher hasher)
++    {
++        _userRepo = userRepo;
++        _hasher = hasher;
++    }
++
++    public async Task<SignupResult> HandleAsync(SignupRequest request)
++    {
++        var existing = await _userRepo.FindByEmailAsync(request.Email);
++        if (existing != null)
++            return SignupResult.Fail("Email already registered");
++
++        var hash = _hasher.Hash(request.Password);
++        var user = new User(request.Email, hash);
++        await _userRepo.SaveAsync(user);
++
++        return SignupResult.Ok(user.Id);
++    }
++}
+diff --git a/tests/auth/loginTests.cs b/tests/auth/loginTests.cs
+new file mode 100644
+--- /dev/null
++++ b/tests/auth/loginTests.cs
+@@ -0,0 +1,20 @@
++using Xunit;
++
++namespace MyApp.Auth.Tests;
++
++public class LoginTests
++{
++    [Fact]
++    public async Task ValidCredentials_ReturnsToken()
++    {
++        // Arrange
++        var handler = CreateHandler(existingUser: true, validPassword: true);
++
++        // Act
++        var result = await handler.HandleAsync(new LoginRequest("test@example.com", "pass123"));
++
++        // Assert
++        Assert.True(result.Success);
++        Assert.NotNull(result.Token);
++    }
++}
