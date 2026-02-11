@@ -15,6 +15,7 @@ public sealed class CopilotAgentClient : ICopilotAgentClient
 {
     private readonly HttpClient _http;
     private readonly bool _mock;
+    // GitHubToken reserved for future CopilotClient authentication in Phase 4
     private readonly string? _gitHubToken;
 
     public CopilotAgentClient(string? gitHubToken = null, bool mock = false)
@@ -136,10 +137,10 @@ public sealed class CopilotAgentClient : ICopilotAgentClient
         yield return fullComment;
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _http.Dispose();
-        await Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }
 
