@@ -42,7 +42,7 @@ public sealed class TriageWorkflow
         {
             // Step 1 — Fetch / validate context (Copilot Agent)
             progress.Report(StepProgress.Working(TriageStep.FetchContext));
-            var diff = await RetryAsync(() => _copilotAgent.GetDiffAsync(input, ct), "Fetch PR context");
+            var diff = await RetryAsync(() => _copilotAgent.GetDiffAsync(input, ct), "Fetch PR context", ct: ct);
             progress.Report(StepProgress.Done(TriageStep.FetchContext));
 
             var prContext = $"Title: {input.Title}\n\n{input.Body}\n\nFiles changed:\n{string.Join("\n", input.FilesChanged)}";
@@ -52,21 +52,24 @@ public sealed class TriageWorkflow
             progress.Report(StepProgress.Working(TriageStep.Summarize));
             var summary = await RetryAsync(
                 () => _foundryAgent.CompleteAsync(Prompts.SummarizeSystem, Prompts.SummarizeUser(diffContext), ct),
-                "Summarize changes");
+                "Summarize changes",
+                ct: ct);
             progress.Report(StepProgress.Done(TriageStep.Summarize));
 
             // Step 3 — Identify risks (Foundry Local Agent)
             progress.Report(StepProgress.Working(TriageStep.IdentifyRisks));
             var risksRaw = await RetryAsync(
                 () => _foundryAgent.CompleteAsync(Prompts.RisksSystem, Prompts.RisksUser(diffContext), ct),
-                "Identify risks");
+                "Identify risks",
+                ct: ct);
             progress.Report(StepProgress.Done(TriageStep.IdentifyRisks));
 
             // Step 4 — Generate checklist (Foundry Local Agent)
             progress.Report(StepProgress.Working(TriageStep.GenerateChecklist));
             var checklistRaw = await RetryAsync(
                 () => _foundryAgent.CompleteAsync(Prompts.ChecklistSystem, Prompts.ChecklistUser(diffContext), ct),
-                "Generate checklist");
+                "Generate checklist",
+                ct: ct);
             progress.Report(StepProgress.Done(TriageStep.GenerateChecklist));
 
             // Step 5 — Draft PR comment (Copilot Agent)
@@ -76,7 +79,8 @@ public sealed class TriageWorkflow
             progress.Report(StepProgress.Working(TriageStep.DraftComment));
             var comment = await RetryAsync(
                 () => _copilotAgent.DraftCommentAsync(summary, risks, checklist, input.Title, ct),
-                "Draft PR comment");
+                "Draft PR comment",
+                ct: ct);
             progress.Report(StepProgress.Done(TriageStep.DraftComment));
 
             return new TriageResult(summary.Trim(), risks, checklist, comment);
@@ -101,7 +105,7 @@ public sealed class TriageWorkflow
         {
             // Step 1 — Fetch context
             progress.ReportStep(TriageStep.FetchContext, false);
-            var diff = await RetryAsync(() => _copilotAgent.GetDiffAsync(input, ct), "Fetch PR context");
+            var diff = await RetryAsync(() => _copilotAgent.GetDiffAsync(input, ct), "Fetch PR context", ct: ct);
             progress.ReportStep(TriageStep.FetchContext, true);
             progress.ReportNewLine();
 
@@ -113,7 +117,8 @@ public sealed class TriageWorkflow
             progress.ReportNewLine();
             var summary = await StreamLLMResponseAsync(
                 _foundryAgent.CompleteStreamingAsync(Prompts.SummarizeSystem, Prompts.SummarizeUser(diffContext), ct),
-                progress);
+                progress,
+                ct);
             progress.ReportNewLine();
             progress.ReportStep(TriageStep.Summarize, true);
             progress.ReportNewLine();
@@ -123,7 +128,8 @@ public sealed class TriageWorkflow
             progress.ReportNewLine();
             var risksRaw = await StreamLLMResponseAsync(
                 _foundryAgent.CompleteStreamingAsync(Prompts.RisksSystem, Prompts.RisksUser(diffContext), ct),
-                progress);
+                progress,
+                ct);
             progress.ReportNewLine();
             progress.ReportStep(TriageStep.IdentifyRisks, true);
             progress.ReportNewLine();
@@ -133,7 +139,8 @@ public sealed class TriageWorkflow
             progress.ReportNewLine();
             var checklistRaw = await StreamLLMResponseAsync(
                 _foundryAgent.CompleteStreamingAsync(Prompts.ChecklistSystem, Prompts.ChecklistUser(diffContext), ct),
-                progress);
+                progress,
+                ct);
             progress.ReportNewLine();
             progress.ReportStep(TriageStep.GenerateChecklist, true);
             progress.ReportNewLine();
@@ -145,7 +152,8 @@ public sealed class TriageWorkflow
             progress.ReportStep(TriageStep.DraftComment, false);
             var comment = await RetryAsync(
                 () => _copilotAgent.DraftCommentAsync(summary, risks, checklist, input.Title, ct),
-                "Draft PR comment");
+                "Draft PR comment",
+                ct: ct);
             progress.ReportStep(TriageStep.DraftComment, true);
             progress.ReportNewLine();
 
@@ -162,7 +170,7 @@ public sealed class TriageWorkflow
     /// Simple retry logic with exponential backoff for LLM calls.
     /// Makes demos more reliable when network is flaky.
     /// </summary>
-    private async Task<T> RetryAsync<T>(Func<Task<T>> operation, string operationName, int maxRetries = 3)
+    private async Task<T> RetryAsync<T>(Func<Task<T>> operation, string operationName, int maxRetries = 3, CancellationToken ct = default)
     {
         for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
@@ -170,12 +178,12 @@ public sealed class TriageWorkflow
             {
                 return await operation();
             }
-            catch (Exception ex) when (attempt < maxRetries)
+            catch (Exception ex) when (attempt < maxRetries && !ct.IsCancellationRequested)
             {
                 var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt)); // Exponential backoff: 2s, 4s, 8s
                 _logger.LogWarning(ex, "{Operation} failed (attempt {Attempt}/{MaxRetries}), retrying in {Delay}s...",
                     operationName, attempt, maxRetries, delay.TotalSeconds);
-                await Task.Delay(delay);
+                await Task.Delay(delay, ct);
             }
         }
 
@@ -189,10 +197,11 @@ public sealed class TriageWorkflow
     /// </summary>
     private static async Task<string> StreamLLMResponseAsync(
         IAsyncEnumerable<string> stream,
-        StreamingProgress progress)
+        StreamingProgress progress,
+        CancellationToken ct = default)
     {
         var builder = new StringBuilder();
-        await foreach (var token in stream)
+        await foreach (var token in stream.WithCancellation(ct))
         {
             builder.Append(token);
             progress.ReportToken(token);
