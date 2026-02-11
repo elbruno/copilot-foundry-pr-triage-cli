@@ -36,24 +36,19 @@ public sealed class FoundryAgentClient : IFoundryAgentClient
     /// <summary>The model name/alias being used.</summary>
     public string Model { get; }
 
-    public FoundryAgentClient(IConfiguration config, bool mock = false, int timeoutSeconds = 300)
+    public FoundryAgentClient(IConfiguration config, bool mock = false, int timeoutSeconds = 300, string? modelOverride = null)
     {
         _mock = mock;
-<<<<<<< HEAD
-        _http = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
-        _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-=======
         
         // Get endpoint - default is base URL without path
         var configEndpoint = config["FOUNDRY_LOCAL_ENDPOINT"] ?? "http://localhost:5273";
         _endpoint = configEndpoint;
-        _model = config["FOUNDRY_LOCAL_MODEL"] ?? "phi-4";
+        _model = modelOverride ?? config["FOUNDRY_LOCAL_MODEL"] ?? "phi-4";
         
         // For display purposes
         Endpoint = configEndpoint;
         Model = _model;
     }
->>>>>>> 4984d8c80986a551d5d14683df74e813746a4685
 
     /// <inheritdoc />
     public Task InitializeAsync(CancellationToken ct = default)
