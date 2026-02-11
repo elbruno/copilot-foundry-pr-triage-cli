@@ -9,7 +9,9 @@ using Spectre.Console;
 string? diffPath = null;
 string? prUrl = null;
 bool mock = false;
-int timeoutSeconds = 300;
+int? timeoutSeconds = null;
+string? modelOverride = null;
+bool noMenu = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -25,6 +27,12 @@ for (int i = 0; i < args.Length; i++)
             if (int.TryParse(args[++i], out var t) && t > 0)
                 timeoutSeconds = t;
             break;
+        case "--model" when i + 1 < args.Length:
+            modelOverride = args[++i];
+            break;
+        case "--no-menu":
+            noMenu = true;
+            break;
         case "--mock":
             mock = true;
             break;
@@ -33,8 +41,16 @@ for (int i = 0; i < args.Length; i++)
 
 if (diffPath is null && prUrl is null)
 {
-    AnsiConsole.MarkupLine("[red]Usage:[/] dotnet run -- --diff <path> [[--timeout <seconds>]] [[--mock]]");
-    AnsiConsole.MarkupLine("       dotnet run -- --pr <github-pr-url> [[--timeout <seconds>]] [[--mock]]");
+    AnsiConsole.MarkupLine("[red]Usage:[/] dotnet run -- --diff <path> [[--timeout <seconds>]] [[--model <name>]] [[--no-menu]] [[--mock]]");
+    AnsiConsole.MarkupLine("       dotnet run -- --pr <github-pr-url> [[--timeout <seconds>]] [[--model <name>]] [[--no-menu]] [[--mock]]");
+    AnsiConsole.WriteLine();
+    AnsiConsole.MarkupLine("[dim]Options:[/]");
+    AnsiConsole.MarkupLine("  [cyan]--diff <path>[/]          Path to local diff/patch file");
+    AnsiConsole.MarkupLine("  [cyan]--pr <url>[/]             GitHub PR URL (requires GITHUB_TOKEN)");
+    AnsiConsole.MarkupLine("  [cyan]--timeout <seconds>[/]    HTTP timeout (default: 300)");
+    AnsiConsole.MarkupLine("  [cyan]--model <name>[/]         Foundry Local model override (e.g., phi-3.5-mini, phi-4)");
+    AnsiConsole.MarkupLine("  [cyan]--no-menu[/]             Skip interactive model/timeout selection");
+    AnsiConsole.MarkupLine("  [cyan]--mock[/]                Use mock responses (skip LLM/GitHub calls)");
     return 1;
 }
 
@@ -47,21 +63,36 @@ var config = new ConfigurationBuilder()
     .AddUserSecrets<Program>()
     .Build();
 
+// ─── Interactive menu for model and timeout selection ──────────
+// Show menu if model/timeout not provided AND --no-menu not set
+if (!noMenu && (modelOverride is null || timeoutSeconds is null))
+{
+    if (modelOverride is null)
+    {
+        modelOverride = StartupMenu.SelectModel();
+    }
+    
+    if (timeoutSeconds is null)
+    {
+        timeoutSeconds = StartupMenu.SelectTimeout();
+    }
+    
+    AnsiConsole.WriteLine();
+}
+
+// Apply defaults if still not set
+timeoutSeconds ??= 300;
+
 // ─── Build input ───────────────────────────────────────────────
 PullRequestInput input;
 var token = config["GITHUB_TOKEN"];
 
-<<<<<<< HEAD
-using var copilotAgent = new CopilotAgentClient(token, mock);
-using var foundryAgent = new FoundryAgentClient(config, mock, timeoutSeconds);
-=======
 await using var copilotAgent = new CopilotAgentClient(token, mock);
-await using var foundryAgent = new FoundryAgentClient(config, mock);
+await using var foundryAgent = new FoundryAgentClient(config, mock, timeoutSeconds.Value, modelOverride);
 
 // Initialize both agents
 await copilotAgent.InitializeAsync(CancellationToken.None);
 await foundryAgent.InitializeAsync(CancellationToken.None);
->>>>>>> 4984d8c80986a551d5d14683df74e813746a4685
 
 AnsiConsole.MarkupLine($"[dim]Foundry Local endpoint:[/] {Markup.Escape(foundryAgent.Endpoint)}");
 AnsiConsole.MarkupLine($"[dim]Foundry Local model:[/] {Markup.Escape(foundryAgent.Model)}");
